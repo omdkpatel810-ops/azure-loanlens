@@ -89,7 +89,7 @@ resource "azurerm_storage_queue" "uploads" {
 
 resource "azurerm_storage_table" "records" {
   #checkov:skip=CKV2_AZURE_20:Table reads are logged through Azure Monitor diagnostic settings (milestone 4), not the classic logs.
-  for_each = toset(["applications", "documents", "readings"])
+  for_each = toset(["applications", "documents", "readings", "reviews", "audit", "summaries"])
 
   name               = each.key
   storage_account_id = azurerm_storage_account.documents.id

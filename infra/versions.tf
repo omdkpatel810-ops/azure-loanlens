@@ -18,6 +18,10 @@ terraform {
       source  = "hashicorp/time"
       version = "~> 0.13"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7"
+    }
   }
 
   # State goes in Guardrails' state storage, next to the platform's (see README).

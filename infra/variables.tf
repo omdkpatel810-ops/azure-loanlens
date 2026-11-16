@@ -101,3 +101,61 @@ variable "confidence_threshold" {
     error_message = "Between 0.5 and 1."
   }
 }
+
+# Milestone 3: the underwriter dashboard (dashboard.tf)
+
+variable "underwriters" {
+  description = "Staff who get the Underwriter role, by sign-in name (for example sam@yourcreditunion.ca)."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for u in var.underwriters : can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", u))])
+    error_message = "Sign-in names look like name@domain."
+  }
+}
+
+variable "staff_ip_ranges" {
+  description = "If set, the dashboard answers only these addresses, such as the credit union's offices. Empty: anywhere, behind sign-in."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for r in var.staff_ip_ranges : can(cidrhost(r, 0)) && r != "0.0.0.0/0"])
+    error_message = "CIDR ranges, never 0.0.0.0/0."
+  }
+}
+
+variable "openai_location" {
+  description = "Where Azure OpenAI runs. Canada East has the models; Canada Central has few."
+  type        = string
+  default     = "canadaeast"
+
+  validation {
+    condition     = contains(["canadacentral", "canadaeast"], var.openai_location)
+    error_message = "Canada only: canadacentral or canadaeast (Guardrails refuses anything else)."
+  }
+}
+
+variable "openai_model" {
+  description = "The model that writes summaries. Check it's offered as Standard in openai_location."
+  type        = string
+  default     = "gpt-4o-mini"
+}
+
+variable "openai_model_version" {
+  description = "The model's version."
+  type        = string
+  default     = "2024-07-18"
+}
+
+variable "openai_capacity" {
+  description = "Thousands of tokens a minute. A summary is about 600 tokens, so 10 is about 15 summaries a minute."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.openai_capacity >= 1 && var.openai_capacity <= 100
+    error_message = "Between 1 and 100."
+  }
+}

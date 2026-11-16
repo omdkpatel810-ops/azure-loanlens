@@ -17,3 +17,8 @@ output "document_intelligence" {
   description = "The endpoint `python -m loanlens.train` and the worker use."
   value       = azurerm_cognitive_account.documents.endpoint
 }
+
+output "dashboard_url" {
+  description = "Where underwriters go."
+  value       = "https://${azurerm_container_app.dashboard.ingress[0].fqdn}"
+}
