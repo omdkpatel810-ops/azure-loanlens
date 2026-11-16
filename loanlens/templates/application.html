@@ -3,6 +3,7 @@
 <p><a href="/">← {{ t.back }}</a></p>
 <h1>{{ t[application.loan_type] }} · {{ money(application.amount) }}</h1>
 <p class="muted">{{ t.status }}: {{ t[application.status] }}</p>
+{% if application.note %}<div class="note" role="note"><b>{{ t.note_from_us }}</b><p>{{ application.note }}</p></div>{% endif %}
 {% if message %}<p class="ok" role="status">{{ t.uploaded_ok.format(name=message) }}</p>{% endif %}
 {% if error %}<p class="alert" role="alert">{{ t[error].format(mb=max_mb) }}</p>{% endif %}
 

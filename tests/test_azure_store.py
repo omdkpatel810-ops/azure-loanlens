@@ -119,7 +119,7 @@ def test_upload_to_reading_end_to_end(azure, settings):
 
     azure.queues.get_queue_client(events.POISON_QUEUE).clear_messages()
     rng = random.Random(5)
-    fields = samples.invent(rng)
+    fields = {**samples.invent(rng), "employee_name": "Amélie Tremblay"}  # the applicant's own slip
     slip = samples.with_truth(samples.draw(fields, rng)[0], fields)
     portal = Portal(azure, settings, as_person(f"user-{uuid.uuid4().hex[:6]}"))
     app_id = portal.start(amount="90000").headers["location"].rsplit("/", 1)[-1]
@@ -138,3 +138,28 @@ def test_upload_to_reading_end_to_end(azure, settings):
     (poisoned,) = azure.queues.get_queue_client(events.POISON_QUEUE).receive_messages()
     assert "wasn't uploaded through the portal" in json.loads(poisoned.content)["reason"]
     assert azure.reading(app_id, "doc-nope") is None and azure.document(app_id, "doc-nope") is None
+
+
+def test_reviews_audit_and_summaries(azure):
+    user = User(f"user-{uuid.uuid4().hex[:6]}", "Amélie Tremblay")
+    app = azure.create_application(user, "mortgage", 250_000)
+    doc = azure.add_document(app, "pay_stub", "stub.pdf", "application/pdf", ".pdf", PDF)
+    assert azure.find_application(app.id) == app and azure.find_application("app-nope") is None
+    assert app.id in {a.id for a in azure.all_applications()}
+
+    assert azure.review(app.id, doc.id) is None
+    azure.save_review(doc, {"reviewer": "Samira Haddad", "values": {"box14": "1.00"}})
+    assert azure.review(app.id, doc.id)["reviewer"] == "Samira Haddad"
+
+    azure.add_audit(app.id, "Samira Haddad", "checked a document", "stub.pdf")
+    azure.add_audit(app.id, "Samira Haddad", "marked the application: verified")
+    assert [e["action"] for e in azure.audit(app.id)] == ["checked a document", "marked the application: verified"]
+
+    updated = azure.set_application_status(app, "more documents needed", "Please add your 2024 T4.")
+    again = azure.find_application(app.id)
+    assert again == updated and (again.status, again.note) == ("more documents needed", "Please add your 2024 T4.")
+
+    assert azure.cached_summary(app.id, "fr", "abc") is None
+    azure.save_summary(app.id, "fr", "abc", {"text": "Bonjour", "source": "template", "note": ""})
+    assert azure.cached_summary(app.id, "fr", "abc")["text"] == "Bonjour"
+    assert azure.cached_summary(app.id, "fr", "changed") is None

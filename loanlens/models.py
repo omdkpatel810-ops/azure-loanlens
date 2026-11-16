@@ -25,8 +25,9 @@ class Application:
     applicant_name: str
     loan_type: str
     amount: int
-    status: str  # collecting documents, in review, decided
+    status: str  # collecting documents, more documents needed, verified
     created_at: str
+    note: str = ""  # from the underwriter to the applicant, when more documents are needed
 
 
 @dataclass(frozen=True)
@@ -38,5 +39,5 @@ class Document:
     content_type: str
     size: int
     blob_name: str
-    status: str  # uploaded, reading, read, needs review, failed
+    status: str  # uploaded, reading, read, needs review, failed, then confirmed by an underwriter
     uploaded_at: str

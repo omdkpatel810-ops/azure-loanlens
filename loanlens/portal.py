@@ -115,7 +115,7 @@ def create_app(store: Store, settings: Settings) -> FastAPI:
             value = 0
         if not MIN_AMOUNT <= value <= MAX_AMOUNT:
             return home(request, user, "bad_amount", 400)
-        if sum(a.status != "decided" for a in store.applications_for(user.id)) >= MAX_OPEN_APPLICATIONS:
+        if sum(a.status != "verified" for a in store.applications_for(user.id)) >= MAX_OPEN_APPLICATIONS:
             return home(request, user, "too_many_applications", 409)
         new = store.create_application(user, loan_type, value)
         return RedirectResponse(f"/applications/{new.id}", status_code=303)

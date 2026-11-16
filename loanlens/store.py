@@ -20,6 +20,9 @@ from loanlens.models import Application, Document, User
 APPLICATIONS = "applications"
 DOCUMENTS = "documents"
 READINGS = "readings"  # what the worker read from each document
+REVIEWS = "reviews"  # what an underwriter confirmed or corrected, per document
+AUDIT = "audit"  # who did what, per application
+SUMMARIES = "summaries"  # summaries already written, so the model isn't asked twice for the same facts
 
 
 def _now() -> str:
@@ -41,6 +44,15 @@ class Store(Protocol):
     def download(self, blob_name: str) -> bytes: ...
     def save_reading(self, doc: Document, reading: dict) -> None: ...
     def reading(self, application_id: str, document_id: str) -> dict | None: ...
+    def all_applications(self) -> list[Application]: ...
+    def find_application(self, application_id: str) -> Application | None: ...
+    def set_application_status(self, app: Application, status: str, note: str = "") -> Application: ...
+    def save_review(self, doc: Document, review: dict) -> None: ...
+    def review(self, application_id: str, document_id: str) -> dict | None: ...
+    def add_audit(self, application_id: str, actor: str, action: str, detail: str = "") -> None: ...
+    def audit(self, application_id: str) -> list[dict]: ...
+    def cached_summary(self, application_id: str, lang: str, fingerprint: str) -> dict | None: ...
+    def save_summary(self, application_id: str, lang: str, fingerprint: str, summary: dict) -> None: ...
 
 
 def new_application(applicant: User, loan_type: str, amount: int) -> Application:
@@ -59,6 +71,9 @@ class MemoryStore:
         self.blobs: dict[str, bytes] = {}
         self.queue: list[str] = []  # what Event Grid would have queued
         self.readings: dict[str, dict] = {}
+        self.reviews: dict[str, dict] = {}
+        self.audit_log: list[dict] = []
+        self.summaries: dict[tuple[str, str], dict] = {}
 
     def create_application(self, applicant: User, loan_type: str, amount: int) -> Application:
         app = new_application(applicant, loan_type, amount)
@@ -99,6 +114,37 @@ class MemoryStore:
     def reading(self, application_id: str, document_id: str) -> dict | None:
         return self.readings.get(document_id) if self.document(application_id, document_id) else None
 
+    def all_applications(self) -> list[Application]:
+        return sorted(self.apps.values(), key=lambda a: a.created_at)
+
+    def find_application(self, application_id: str) -> Application | None:
+        return self.apps.get(application_id)
+
+    def set_application_status(self, app: Application, status: str, note: str = "") -> Application:
+        self.apps[app.id] = replace(app, status=status, note=note)
+        return self.apps[app.id]
+
+    def save_review(self, doc: Document, review: dict) -> None:
+        self.reviews[doc.id] = json.loads(json.dumps(review))
+
+    def review(self, application_id: str, document_id: str) -> dict | None:
+        return self.reviews.get(document_id) if self.document(application_id, document_id) else None
+
+    def add_audit(self, application_id: str, actor: str, action: str, detail: str = "") -> None:
+        self.audit_log.append(
+            {"application_id": application_id, "at": _now(), "actor": actor, "action": action, "detail": detail}
+        )
+
+    def audit(self, application_id: str) -> list[dict]:
+        return [e for e in self.audit_log if e["application_id"] == application_id]
+
+    def cached_summary(self, application_id: str, lang: str, fingerprint: str) -> dict | None:
+        found = self.summaries.get((application_id, lang))
+        return found if found and found["fingerprint"] == fingerprint else None
+
+    def save_summary(self, application_id: str, lang: str, fingerprint: str, summary: dict) -> None:
+        self.summaries[(application_id, lang)] = {**summary, "fingerprint": fingerprint}
+
 
 class AzureStore:
     def __init__(self, *, account: str = "", connection: str = "", emulate_events: bool = False, credential=None):
@@ -125,6 +171,9 @@ class AzureStore:
         self.apps = self.tables.get_table_client(APPLICATIONS)
         self.docs = self.tables.get_table_client(DOCUMENTS)
         self.read_table = self.tables.get_table_client(READINGS)
+        self.review_table = self.tables.get_table_client(REVIEWS)
+        self.audit_table = self.tables.get_table_client(AUDIT)
+        self.summary_table = self.tables.get_table_client(SUMMARIES)
         self.queue = self.queues.get_queue_client(events.QUEUE)
 
     def prepare(self) -> None:
@@ -137,6 +186,9 @@ class AzureStore:
             self.apps.create_table,
             self.docs.create_table,
             self.read_table.create_table,
+            self.review_table.create_table,
+            self.audit_table.create_table,
+            self.summary_table.create_table,
             self.queue.create_queue,
             self.queues.get_queue_client(events.POISON_QUEUE).create_queue,
         ):
@@ -146,7 +198,14 @@ class AzureStore:
     @staticmethod
     def _app(e: dict) -> Application:
         return Application(
-            e["RowKey"], e["PartitionKey"], e["applicant_name"], e["loan_type"], int(e["amount"]), e["status"], e["created_at"]
+            e["RowKey"],
+            e["PartitionKey"],
+            e["applicant_name"],
+            e["loan_type"],
+            int(e["amount"]),
+            e["status"],
+            e["created_at"],
+            e.get("note", ""),
         )
 
     @staticmethod
@@ -231,3 +290,57 @@ class AzureStore:
             return json.loads(self.read_table.get_entity(application_id, document_id)["reading"])
         except ResourceNotFoundError:
             return None
+
+    def all_applications(self) -> list[Application]:
+        return sorted((self._app(r) for r in self.apps.list_entities()), key=lambda a: a.created_at)
+
+    def find_application(self, application_id: str) -> Application | None:
+        rows = list(self.apps.query_entities("RowKey eq @id", parameters={"id": application_id}))
+        return self._app(rows[0]) if rows else None
+
+    def set_application_status(self, app: Application, status: str, note: str = "") -> Application:
+        from azure.data.tables import UpdateMode
+
+        row = {"PartitionKey": app.applicant_id, "RowKey": app.id, "status": status, "note": note}
+        self.apps.update_entity(row, mode=UpdateMode.MERGE)
+        return replace(app, status=status, note=note)
+
+    def save_review(self, doc: Document, review: dict) -> None:
+        self.review_table.upsert_entity({"PartitionKey": doc.application_id, "RowKey": doc.id, "review": json.dumps(review)})
+
+    def review(self, application_id: str, document_id: str) -> dict | None:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            return json.loads(self.review_table.get_entity(application_id, document_id)["review"])
+        except ResourceNotFoundError:
+            return None
+
+    def add_audit(self, application_id: str, actor: str, action: str, detail: str = "") -> None:
+        at = _now()
+        row = {
+            "PartitionKey": application_id,
+            "RowKey": f"{at}-{uuid.uuid4().hex[:6]}",
+            "at": at,
+            "actor": actor,
+            "action": action,
+        }
+        self.audit_table.create_entity({**row, "detail": detail})
+
+    def audit(self, application_id: str) -> list[dict]:
+        rows = self.audit_table.query_entities("PartitionKey eq @p", parameters={"p": application_id})
+        entries = [{"application_id": application_id, **{k: r[k] for k in ("at", "actor", "action", "detail")}} for r in rows]
+        return sorted(entries, key=lambda e: e["at"])
+
+    def cached_summary(self, application_id: str, lang: str, fingerprint: str) -> dict | None:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            row = self.summary_table.get_entity(application_id, lang)
+        except ResourceNotFoundError:
+            return None
+        return json.loads(row["summary"]) | {"fingerprint": row["fingerprint"]} if row["fingerprint"] == fingerprint else None
+
+    def save_summary(self, application_id: str, lang: str, fingerprint: str, summary: dict) -> None:
+        row = {"PartitionKey": application_id, "RowKey": lang, "fingerprint": fingerprint, "summary": json.dumps(summary)}
+        self.summary_table.upsert_entity(row)
