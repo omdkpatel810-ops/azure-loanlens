@@ -6,11 +6,13 @@ French.**
 
 [![CI](https://github.com/omdkpatel810-ops/azure-loanlens/actions/workflows/ci.yml/badge.svg)](https://github.com/omdkpatel810-ops/azure-loanlens/actions/workflows/ci.yml)
 
-> **Status: milestones 1 to 3 of 4 are built and tested offline.** The upload portal, the document worker
-> and the underwriter dashboard run locally against Azurite, the Azure Storage emulator, with 156 Python
-> tests at 100% coverage, and the Azure infrastructure has 22 Terraform tests against mocked providers.
-> The model's accuracy can only be measured once it's trained in Azure, which waits on the subscription;
-> the measured results will go here.
+> **Status: all 4 milestones are built and tested offline.** The upload portal, the document worker and the
+> underwriter dashboard run locally against Azurite, the Azure Storage emulator, with 173 Python tests at
+> 100% coverage and a load test on every push. The Azure infrastructure has 28 Terraform tests against
+> mocked providers. The model's accuracy, the cost per application and the failover times can only be
+> measured in Azure, which waits on the subscription; those results will go here.
+
+![Demo: an applicant uploads a T4, the worker reads it, an underwriter confirms it and verifies the application](docs/demo.gif)
 
 ## The problem
 
@@ -25,6 +27,18 @@ LoanLens replaces the email and the typing:
 2. **A worker reads each document** with a model trained to find a T4's boxes, and checks what it found.
 3. **An underwriter reviews every application**, with the extracted figures, the model's confidence, and
    a short summary in English or French. Nothing is decided without a person.
+
+```mermaid
+flowchart LR
+  A[Applicant] -- External ID --> P[Portal]
+  P --> S[(Private storage<br/>Canada Central,<br/>copy in Canada East)]
+  S -- Event Grid --> Q[[Queue]] --> W[Worker] -- custom T4 model --> D[Document Intelligence]
+  W --> S
+  U[Underwriter] -- staff directory,<br/>Underwriter role --> B[Dashboard]
+  B --> S
+  B -- figures only --> O[Azure OpenAI]
+  P & W & B -. telemetry .-> M[Application Insights<br/>and alerts]
+```
 
 It deploys into [Guardrails](https://github.com/omdkpatel810-ops/azure-guardrails), so its resource
 group comes with an owner, a budget and Guardrails' policies.
@@ -220,6 +234,68 @@ The corrections also measure the model on real documents. The dashboard shows th
 underwriters kept as the model read them, a running accuracy figure from real applications, next to the
 one from the test slips.
 
+## Milestone 4: load, monitoring, cost and the failover drill
+
+### Load
+
+**The portal**, with [Locust](loadtest/locustfile.py): simulated applicants sign in, start an application,
+upload T4s and keep checking on it. Each one signs in as a different person, so per-applicant limits
+don't hide anything. On the local stack (the portal with two workers, Azurite and the worker, in one
+cloud container):
+
+| Applicants | Requests | Per second | Median | 95th percentile | Failed |
+|---|---|---|---|---|---|
+| 150, for a minute | 5,689 | 96 | 23 ms | 110 ms | 0 |
+
+CI runs the same test with 100 applicants on every push, fails if a single request fails, and writes the
+numbers into the run's summary.
+
+**The pipeline in Azure**, with [`loanlens/burst.py`](loanlens/burst.py): N applications with a sample
+T4 each, through the same storage code as the portal, so every upload goes through Event Grid, the queue,
+the worker and the model. It reports T4s read a minute and the median and 95th-percentile time from upload
+to read. Azure's sign-in can't be scripted, which is the point of it, so the portal itself isn't load
+tested in Azure.
+
+### Monitoring
+
+All three apps send requests, traces and logs to **Application Insights**. Local authentication is off,
+so telemetry needs each app's own identity, not just the connection string. Storage reads, writes and
+deletions go to the workspace too, which makes it the record of who opened which applicant's documents.
+
+| Alert | Fires when | Severity |
+|---|---|---|
+| Documents set aside | the worker moves anything to the poison queue | 2 |
+| Reads being retried | more than 10 retries in 15 minutes: Document Intelligence is throttling or down | 2 |
+| Requests failing | more than 5% of portal or dashboard requests fail (with at least 20) | 1 |
+
+With `alert_email` set, every alert emails the operator.
+
+### Cost per application
+
+[`loanlens/costs.py`](loanlens/costs.py) gives two numbers for a month:
+
+- **actual**: everything billed to LoanLens' resource group, from the FOCUS-format cost export Guardrails
+  already writes for every team, divided by the applications started that month;
+- **one more application**: the pages Document Intelligence read and the tokens summaries used (both
+  recorded as they happen), times the prices you give. Fixed costs like the registry don't grow with
+  volume, so this is the cost at scale.
+
+### The Canada East failover drill
+
+[`loanlens/failover.py`](loanlens/failover.py) asks: Canada Central's storage is gone. How much is lost,
+and how long until applicants can upload again?
+
+1. It records how far behind Canada East is (`lastSyncTime`): what an unplanned failover would lose.
+2. It checks the Canada East copy can already be read, before anything changes.
+3. It fails the account over (planned by default, so both copies survive), writing a test file every 15
+   seconds the whole time.
+4. It reports the recovery time: from the start until writes work again with Canada East as the primary.
+   With `--failback`, it comes back the same way.
+
+The storage account's addresses don't change in a failover, so the portal and worker carry on without a
+redeploy. What the drill doesn't cover: the apps themselves run in Canada Central. Losing all of Canada
+Central would also need a standby Container Apps environment in Canada East.
+
 ## Running it
 
 **On your computer**, with Docker:
@@ -264,6 +340,13 @@ LOANLENS_AUTH=dev python -m loanlens.worker
 
 5. Give underwriters the role: `-var 'underwriters=["you@yourtenant.onmicrosoft.com"]'`. Check that
    `gpt-4o-mini` is offered as a Standard deployment in Canada East first; `openai_model` changes it.
+6. Measure it:
+
+   ```bash
+   python -m loanlens.burst --applications 100 --yes
+   python -m loanlens.failover drill --account "$(terraform -chdir=infra output -raw storage_account)" --yes --failback
+   python -m loanlens.costs --export <Guardrails' cost export>.csv --month 2027-01
+   ```
 
 LoanLens' environment request for Guardrails (`environments/loanlens-prod.json` there):
 
@@ -296,10 +379,13 @@ change.
 | The dashboard: only underwriters, corrections, decisions, the applicant's note, viewing documents, French, summaries kept until the figures change | pytest | 18 |
 | Summaries: the facts, the template in both languages, the numbers check, outages | pytest, with a stand-in model | 16 |
 | The Azure Storage code end to end: tables, private blobs, events, the worker taking real queue messages, reviews and the audit trail | pytest, against Azurite | 10 |
+| The burst test, the failover drill (recovery point and time, failed writes, failback), cost per application, the load test report | pytest, with a simulated storage account and cost export | 17 |
 | Python coverage | pytest-cov | 100% |
 | Storage lock-down, retention, upload events, least privilege, scale to zero, sign-in, secret rotation, bad inputs | `terraform test`, mocked providers | 11 |
 | Document Intelligence's lock-down, the worker's rights, scaling on the queue, no ingress | `terraform test`, mocked providers | 5 |
 | Underwriter sign-in and role, the dashboard's rights, Azure OpenAI in Canada without keys, office-only access | `terraform test`, mocked providers | 6 |
+| Telemetry signed in per app, storage access logged, the three alerts, who gets emailed, the operator's drill rights | `terraform test`, mocked providers | 6 |
+| The portal under 100 simulated applicants, and a burst of 50 uploads through the worker | Locust and the burst test, against Azurite | every push |
 | Formatting, validation, linting, security scanning; the image builds and answers its health check | `terraform fmt` and `validate`, tflint, Checkov, ruff, Docker | every push |
 
 Checkov passes 29 checks on the Terraform and skips 29, each with its reason written next to it (most are
@@ -310,14 +396,17 @@ Premium-only registry features). It passes every check on the workflow and the D
 1. **Secure upload portal**: applicant sign-in, private storage, upload events into a queue ✅ built and tested offline
 2. **Worker reads documents**: a custom extraction model trained on generated T4s ✅ built and tested offline
 3. **Underwriter dashboard** with bilingual summaries and human review ✅ built and tested offline
-4. **Load test, monitoring, cost per application**, and the Canada East failover drill
+4. **Load test, monitoring, cost per application**, and the Canada East failover drill ✅ built and tested offline
 
 ## Layout
 
 ```
-loanlens/       portal.py, worker.py, dashboard.py; t4.py (fields and checks), samples.py, train.py, evaluate.py, summary.py
-infra/          Terraform: network, storage and Event Grid, Container Apps, sign-in, Document Intelligence, Azure OpenAI
+loanlens/       portal.py, worker.py, dashboard.py; t4.py, samples.py, train.py, evaluate.py, summary.py;
+                burst.py, failover.py, costs.py, telemetry.py
+loadtest/       the Locust load test and its report
+infra/          Terraform: network, storage and Event Grid, Container Apps, sign-in, Document Intelligence, Azure OpenAI,
+                monitoring and alerts
 docs/samples/   three generated sample T4s to try the portal with
 tests/          Python tests (and infra/tests/ for Terraform)
-docs/           screenshots
+docs/           screenshots and the demo GIF
 ```
