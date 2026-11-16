@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block main %}
+<h1>{{ t.sign_in }}</h1>
+<p class="muted">Local development only: pick a sample person. In Azure, Microsoft Entra External ID signs people in.</p>
+<form method="post" action="/dev/sign-in" class="form">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% for id, name in people.items() %}
+  <button type="submit" name="person" value="{{ id }}">{{ name }}</button>
+  {% endfor %}
+</form>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block main %}
+<p class="lede">{{ t.tagline }}</p>
+{% if error %}<p class="alert" role="alert">{{ t[error] }}</p>{% endif %}
+
+<section>
+  <h1>{{ t.your_applications }}</h1>
+  {% if applications %}
+  <ul class="cards">
+    {% for a in applications %}
+    <li><a href="/applications/{{ a.id }}"><b>{{ t[a.loan_type] }}</b> · {{ money(a.amount) }}<span class="status">{{ t[a.status] }}</span></a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">{{ t.none_yet }}</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>{{ t.new_application }}</h2>
+  <form method="post" action="/applications" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>{{ t.loan_type }}
+      <select name="loan_type" required>
+        {% for k in loan_types %}<option value="{{ k }}">{{ t[k] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>{{ t.amount }}
+      <input name="amount" inputmode="numeric" required autocomplete="off">
+    </label>
+    <button type="submit">{{ t.start }}</button>
+  </form>
+</section>
+{% endblock %}

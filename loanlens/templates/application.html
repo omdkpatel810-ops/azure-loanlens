@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block main %}
+<p><a href="/">← {{ t.back }}</a></p>
+<h1>{{ t[application.loan_type] }} · {{ money(application.amount) }}</h1>
+<p class="muted">{{ t.status }}: {{ t[application.status] }}</p>
+{% if message %}<p class="ok" role="status">{{ t.uploaded_ok.format(name=message) }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ t[error].format(mb=max_mb) }}</p>{% endif %}
+
+<section>
+  <h2>{{ t.documents }}</h2>
+  {% if documents %}
+  <table>
+    <tbody>
+      {% for d in documents %}
+      <tr><td>{{ d.filename }}</td><td>{{ t[d.kind] }}</td><td class="status">{{ t[d.status] }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">{{ t.no_documents }}</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>{{ t.upload }}</h2>
+  <form method="post" action="/applications/{{ application.id }}/documents" enctype="multipart/form-data" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>{{ t.kind }}
+      <select name="kind" required>
+        {% for k in kinds %}<option value="{{ k }}">{{ t[k] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>{{ t.file.format(mb=max_mb) }}
+      <input type="file" name="file" accept="application/pdf,image/jpeg,image/png" required>
+    </label>
+    <button type="submit">{{ t.send }}</button>
+  </form>
+</section>
+{% endblock %}

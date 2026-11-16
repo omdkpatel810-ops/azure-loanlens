@@ -1,0 +1,28 @@
+[project]
+name = "azure-loanlens"
+version = "0.1.0"
+description = "Loan documents uploaded securely, read by a model, and checked by a person, on Azure."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = ["azurite: needs the Azurite storage emulator on 127.0.0.1"]
+
+[tool.coverage.run]
+source = ["loanlens"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+allowed-confusables = ["’", "\u00a0"]  # French typography: apostrophes, and no-break spaces in amounts
+
+[tool.ruff.lint.isort]
+known-first-party = ["loanlens"]

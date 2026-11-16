@@ -1,0 +1,35 @@
+:root {
+  --bg: #f5f6f8; --surface: #fff; --ink: #14202e; --muted: #5b6876; --line: #d9dee5;
+  --accent: #1f5f8b; --accent-ink: #fff; --ok: #1d6b43; --ok-soft: #e0f1e7; --bad: #9b2c2c; --bad-soft: #fbe5e5;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #11161c; --surface: #1a2129; --ink: #e8edf2; --muted: #9aa7b4; --line: #2c3540;
+          --accent: #6fb3e0; --accent-ink: #0d1318; --ok: #7fd1a2; --ok-soft: #173126; --bad: #f2a3a3; --bad-soft: #3a1d1d; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5; }
+.top { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center;
+       padding: 14px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; color: var(--ink); text-decoration: none; font-size: 1.1rem; }
+nav { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 0.92rem; }
+a { color: var(--accent); }
+main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.5rem; margin: 0 0 8px; }
+h2 { font-size: 1.15rem; margin: 28px 0 10px; }
+.lede { font-size: 1.05rem; color: var(--muted); }
+.muted { color: var(--muted); }
+.cards { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.cards a { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px; background: var(--surface); border: 1px solid var(--line);
+           border-radius: 10px; color: var(--ink); text-decoration: none; }
+.status { margin-left: auto; color: var(--muted); }
+.form { display: grid; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+label { display: grid; gap: 6px; font-weight: 600; font-size: 0.95rem; }
+input, select { font: inherit; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); width: 100%; }
+button { font: inherit; font-weight: 600; padding: 10px 16px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-ink); cursor: pointer; justify-self: start; }
+table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+td { padding: 10px 12px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+tr:first-child td { border-top: 0; }
+.alert { background: var(--bad-soft); color: var(--bad); padding: 10px 12px; border-radius: 8px; }
+.ok { background: var(--ok-soft); color: var(--ok); padding: 10px 12px; border-radius: 8px; }
+footer { max-width: 720px; margin: 0 auto; padding: 0 16px 32px; color: var(--muted); font-size: 0.85rem; }
