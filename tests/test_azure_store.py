@@ -163,3 +163,4 @@ def test_reviews_audit_and_summaries(azure):
     azure.save_summary(app.id, "fr", "abc", {"text": "Bonjour", "source": "template", "note": ""})
     assert azure.cached_summary(app.id, "fr", "abc")["text"] == "Bonjour"
     assert azure.cached_summary(app.id, "fr", "changed") is None
+    assert azure.summary_record(app.id, "fr")["text"] == "Bonjour" and azure.summary_record(app.id, "en") is None

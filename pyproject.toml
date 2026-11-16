@@ -24,5 +24,8 @@ target-version = "py312"
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 allowed-confusables = ["’", "\u00a0", "\u202f"]  # French typography: apostrophes, and no-break spaces in amounts
 
+[tool.ruff.lint.per-file-ignores]
+"tests/test_operations.py" = ["E501"]  # sample cost-export and Locust CSV rows, kept whole
+
 [tool.ruff.lint.isort]
 known-first-party = ["loanlens"]
