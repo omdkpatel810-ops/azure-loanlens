@@ -1,0 +1,2 @@
+# The load test, kept apart from the app and test requirements because Locust is large.
+locust==2.47.0

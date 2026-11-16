@@ -65,6 +65,45 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: checkov --directory . --framework terraform github_actions dockerfile --compact --quiet
 
+  load:
+    name: Load test (local stack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Start Azurite
+        run: |
+          npx --yes azurite@3.37.0 --silent --inMemoryPersistence --skipApiVersionCheck &
+          for i in $(seq 30); do nc -z 127.0.0.1 10000 && exit 0; sleep 1; done
+          exit 1
+      - run: pip install -r requirements-dev.txt -r loadtest/requirements.txt
+      - name: Start the portal and the worker
+        run: |
+          LOANLENS_AUTH=dev uvicorn --factory loanlens.portal:from_env --port 8000 --workers 2 > portal.log 2>&1 &
+          LOANLENS_AUTH=dev python -m loanlens.worker > worker.log 2>&1 &
+          for i in $(seq 30); do curl -fsS http://127.0.0.1:8000/healthz && exit 0; sleep 1; done
+          cat portal.log && exit 1
+      - name: 100 applicants for a minute
+        run: locust -f loadtest/locustfile.py --host http://127.0.0.1:8000 --headless -u 100 -r 10 -t 60s --csv results/locust --only-summary
+      - name: Report, and fail if any request failed
+        run: python loadtest/report.py results/locust_stats.csv
+      - name: A burst of 50 applications through the worker
+        run: |
+          echo "## Burst through the worker (local stand-in reader)" >> "$GITHUB_STEP_SUMMARY"
+          python -m loanlens.burst --applications 50 --yes --local --timeout-minutes 3 | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test
+          path: |
+            results/
+            *.log
+
   image:
     name: Portal image
     runs-on: ubuntu-latest
