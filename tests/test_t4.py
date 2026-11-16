@@ -81,3 +81,20 @@ def test_limits_are_consistent():
         assert float(lim.cpp / (lim.ympe - 3500)) == pytest.approx(0.0595)
         assert float(lim.qpp / (lim.ympe - 3500)) == pytest.approx(0.064)
         assert lim.ei < lim.insurable * Decimal("0.02") and lim.ei_quebec < lim.ei
+
+
+@pytest.mark.parametrize(
+    ("on_slip", "applicant", "same"),
+    [
+        ("AMELIE TREMBLAY", "Amélie Tremblay", True),
+        ("AMÉLIE TREMBLAY", "Amélie Tremblay-Roy", True),
+        ("J. OKAFOR", "Jordan Okafor", True),
+        ("JORDAN A OKAFOR", "Jordan Okafor", True),
+        ("MATHIEU PELLETIER", "Jordan Okafor", False),
+        ("TREMBLAY", "Amélie Roy", False),
+        (None, "Jordan Okafor", True),
+        ("JORDAN OKAFOR", "", True),
+    ],
+)
+def test_same_person(on_slip, applicant, same):
+    assert t4.same_person(on_slip, applicant) is same

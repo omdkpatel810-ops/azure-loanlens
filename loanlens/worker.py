@@ -4,7 +4,7 @@
 
 For every upload event on the queue it finds the document's record, and then:
 - for a T4, asks the extractor for its fields, normalizes them, and checks them against the year's legal
-  maximums and each other (`t4.check`). Any problem, or any field the model is unsure of, sends the
+  maximums, each other (`t4.check`), and the applicant's name. Any problem, or any field the model is unsure of, sends the
   document to a person ("needs review"); otherwise it's "read". An underwriter reviews every
   application either way (milestone 3); "read" only means nothing looked wrong.
 - for anything else (pay stubs, other documents), marks it for a person to read.
@@ -86,6 +86,11 @@ class Worker:
             if values.get(k) is not None and f.confidence < self.confidence
         ]
         issues = t4.check(values) + unsure
+        app = self.store.find_application(application_id)
+        if app and not t4.same_person(values.get("employee_name"), app.applicant_name):
+            issues.append(
+                f"The employee on this slip ({values['employee_name']}) doesn't look like the applicant ({app.applicant_name})"
+            )
         status = "needs review" if issues else "read"
         self.store.save_reading(
             doc,

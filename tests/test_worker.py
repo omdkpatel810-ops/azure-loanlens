@@ -155,3 +155,17 @@ def test_the_loop_waits_when_the_queue_is_empty(setup):
     upload(store, app)
     worker.run(idle_seconds=7, sleep=slept.append, rounds=3)
     assert slept == [7, 7] and store.readings
+
+
+def test_someone_elses_slip_goes_to_a_person():
+    store = MemoryStore()
+    queue = MemoryQueue(store.queue)
+    app = store.create_application(User("u", "Jordan Okafor"), "car", 42_000)
+    mine, _ = sample_slip(2, employee_name="Jordan A. Okafor")
+    theirs, _ = sample_slip(3, employee_name="Mathieu Pelletier")
+    upload(store, app, mine)
+    doc = upload(store, app, theirs)
+    assert Worker(store, queue, SampleReader()).run_once() == ["read", "needs review"]
+    assert store.reading(app.id, doc.id)["issues"] == [
+        "The employee on this slip (MATHIEU PELLETIER) doesn't look like the applicant (Jordan Okafor)"
+    ]

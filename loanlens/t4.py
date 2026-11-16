@@ -9,6 +9,7 @@ Insurance Number printed on the slip: lending doesn't need it.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -128,3 +129,19 @@ def check(fields: dict[str, str | None]) -> list[str]:
             if money.get(key, Decimal(0)) > max(income, Decimal(0)) + Decimal("0.01"):
                 issues.append(f"{FIELDS[key]} is more than the employment income in box 14")
     return issues
+
+
+def _name_parts(name: str) -> set[str]:
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return {p for p in re.split(r"[^A-Za-z]+", plain.upper()) if len(p) > 1}
+
+
+def same_person(on_slip: str | None, applicant: str | None) -> bool:
+    """Whether the employee on a slip could be the applicant: every part of the shorter name appears in the
+    longer one, ignoring accents, case, punctuation and initials. "AMELIE TREMBLAY" matches "Amélie
+    Tremblay-Roy"; "MATHIEU PELLETIER" doesn't match "Jordan Okafor"."""
+    a, b = _name_parts(on_slip or ""), _name_parts(applicant or "")
+    if not a or not b:
+        return True  # nothing to compare; a missing name is reported on its own
+    shorter, longer = sorted((a, b), key=len)
+    return shorter <= longer
