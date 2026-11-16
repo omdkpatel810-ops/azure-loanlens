@@ -1,0 +1,4 @@
+*
+!requirements.txt
+!loanlens/
+**/__pycache__

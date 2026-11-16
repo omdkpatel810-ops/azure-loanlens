@@ -1,0 +1,19 @@
+# Everything on your own computer: `docker compose up`, then open http://localhost:8000
+# Azurite stands in for Azure Storage, and a local sign-in page stands in for Entra External ID.
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --inMemoryPersistence --skipApiVersionCheck
+    ports:
+      - "8000:8000"   # the portal's port, published here because the portal shares this network
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+
+  portal:
+    build: .
+    network_mode: service:azurite   # so the portal reaches Azurite on 127.0.0.1, as the SDK expects
+    environment:
+      LOANLENS_AUTH: dev
+    depends_on:
+      - azurite
