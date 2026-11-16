@@ -19,10 +19,11 @@ from loanlens.models import Application, Document, User
 
 APPLICATIONS = "applications"
 DOCUMENTS = "documents"
+READINGS = "readings"  # what the worker read from each document
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def _id(prefix: str) -> str:
@@ -35,6 +36,11 @@ class Store(Protocol):
     def application(self, applicant_id: str, application_id: str) -> Application | None: ...
     def add_document(self, app: Application, kind: str, filename: str, content_type: str, ext: str, data: bytes) -> Document: ...
     def documents(self, application_id: str) -> list[Document]: ...
+    def document(self, application_id: str, document_id: str) -> Document | None: ...
+    def set_status(self, doc: Document, status: str) -> Document: ...
+    def download(self, blob_name: str) -> bytes: ...
+    def save_reading(self, doc: Document, reading: dict) -> None: ...
+    def reading(self, application_id: str, document_id: str) -> dict | None: ...
 
 
 def new_application(applicant: User, loan_type: str, amount: int) -> Application:
@@ -52,6 +58,7 @@ class MemoryStore:
         self.docs: dict[str, Document] = {}
         self.blobs: dict[str, bytes] = {}
         self.queue: list[str] = []  # what Event Grid would have queued
+        self.readings: dict[str, dict] = {}
 
     def create_application(self, applicant: User, loan_type: str, amount: int) -> Application:
         app = new_application(applicant, loan_type, amount)
@@ -75,9 +82,22 @@ class MemoryStore:
     def documents(self, application_id: str) -> list[Document]:
         return sorted((d for d in self.docs.values() if d.application_id == application_id), key=lambda d: d.uploaded_at)
 
+    def document(self, application_id: str, document_id: str) -> Document | None:
+        doc = self.docs.get(document_id)
+        return doc if doc and doc.application_id == application_id else None
+
     def set_status(self, doc: Document, status: str) -> Document:
         self.docs[doc.id] = replace(doc, status=status)
         return self.docs[doc.id]
+
+    def download(self, blob_name: str) -> bytes:
+        return self.blobs[blob_name]
+
+    def save_reading(self, doc: Document, reading: dict) -> None:
+        self.readings[doc.id] = json.loads(json.dumps(reading))
+
+    def reading(self, application_id: str, document_id: str) -> dict | None:
+        return self.readings.get(document_id) if self.document(application_id, document_id) else None
 
 
 class AzureStore:
@@ -104,6 +124,7 @@ class AzureStore:
         self.uploads = self.blob.get_container_client(events.CONTAINER)
         self.apps = self.tables.get_table_client(APPLICATIONS)
         self.docs = self.tables.get_table_client(DOCUMENTS)
+        self.read_table = self.tables.get_table_client(READINGS)
         self.queue = self.queues.get_queue_client(events.QUEUE)
 
     def prepare(self) -> None:
@@ -115,6 +136,7 @@ class AzureStore:
             self.uploads.create_container,
             self.apps.create_table,
             self.docs.create_table,
+            self.read_table.create_table,
             self.queue.create_queue,
             self.queues.get_queue_client(events.POISON_QUEUE).create_queue,
         ):
@@ -181,3 +203,31 @@ class AzureStore:
     def documents(self, application_id: str) -> list[Document]:
         rows = self.docs.query_entities("PartitionKey eq @p", parameters={"p": application_id})
         return sorted((self._doc(r) for r in rows), key=lambda d: d.uploaded_at)
+
+    def document(self, application_id: str, document_id: str) -> Document | None:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            return self._doc(self.docs.get_entity(application_id, document_id))
+        except ResourceNotFoundError:
+            return None
+
+    def set_status(self, doc: Document, status: str) -> Document:
+        from azure.data.tables import UpdateMode
+
+        self.docs.update_entity({"PartitionKey": doc.application_id, "RowKey": doc.id, "status": status}, mode=UpdateMode.MERGE)
+        return replace(doc, status=status)
+
+    def download(self, blob_name: str) -> bytes:
+        return self.uploads.download_blob(blob_name).readall()
+
+    def save_reading(self, doc: Document, reading: dict) -> None:
+        self.read_table.upsert_entity({"PartitionKey": doc.application_id, "RowKey": doc.id, "reading": json.dumps(reading)})
+
+    def reading(self, application_id: str, document_id: str) -> dict | None:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            return json.loads(self.read_table.get_entity(application_id, document_id)["reading"])
+        except ResourceNotFoundError:
+            return None

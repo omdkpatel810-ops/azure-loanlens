@@ -72,8 +72,9 @@ def test_at_most_five_open_applications(amelie):
 def test_uploading_a_t4(amelie, store):
     app_id = new_app(amelie)
     response = amelie.upload(app_id, name="../../T4 2025 <final>.pdf")
-    assert response.status_code == 201 and "Thanks, we have T4 2025 final.pdf." in text(response)
     (doc,) = store.docs.values()
+    assert response.status_code == 303 and response.headers["location"] == f"/applications/{app_id}?uploaded={doc.id}"
+    assert "Thanks, we have T4 2025 final.pdf." in text(amelie.client.get(response.headers["location"]))
     assert (doc.kind, doc.content_type, doc.status, doc.size) == ("t4", "application/pdf", "uploaded", len(PDF))
     assert doc.blob_name == f"{app_id}/{doc.id}.pdf" and store.blobs[doc.blob_name] == PDF
     # Event Grid's job, done by the memory store: one BlobCreated event the worker can read.
@@ -86,7 +87,7 @@ def test_uploading_a_t4(amelie, store):
 @pytest.mark.parametrize(("data", "ext"), [(PNG, ".png"), (JPEG, ".jpg")], ids=["png", "jpeg"])
 def test_photos_of_documents_are_fine(amelie, store, data, ext):
     app_id = new_app(amelie)
-    assert amelie.upload(app_id, data, name="photo", kind="pay_stub").status_code == 201
+    assert amelie.upload(app_id, data, name="photo", kind="pay_stub").status_code == 303
     assert next(iter(store.docs.values())).blob_name.endswith(ext)
 
 
@@ -115,7 +116,7 @@ def test_the_document_kind_must_be_one_we_know(amelie, store):
 def test_at_most_twenty_documents(amelie):
     app_id = new_app(amelie)
     for _ in range(20):
-        assert amelie.upload(app_id).status_code == 201
+        assert amelie.upload(app_id).status_code == 303
     response = amelie.upload(app_id)
     assert response.status_code == 409 and "already has 20 documents" in text(response)
 
@@ -186,3 +187,10 @@ def test_queued_events_are_json(amelie, store):
     amelie.upload(app_id)
     event = json.loads(store.queue[0])
     assert event["eventType"] == "Microsoft.Storage.BlobCreated" and event["data"]["contentType"] == "application/pdf"
+
+
+def test_the_thanks_message_is_only_for_your_own_documents(amelie, jordan, store):
+    app_id = new_app(amelie)
+    doc_id = amelie.upload(app_id).headers["location"].split("uploaded=")[1]
+    assert "Thanks, we have" not in text(amelie.client.get(f"/applications/{app_id}?uploaded=doc-nope"))
+    assert jordan.client.get(f"/applications/{app_id}?uploaded={doc_id}").status_code == 404

@@ -138,9 +138,12 @@ def create_app(store: Store, settings: Settings) -> FastAPI:
         )
 
     @app.get("/applications/{application_id}", response_class=HTMLResponse)
-    def application(request: Request, application_id: str):
+    def application(request: Request, application_id: str, uploaded: str = ""):
         user = signed_in(request)
-        return show(request, user, application_id) if user else to_sign_in()
+        if not user:
+            return to_sign_in()
+        just_added = store.document(application_id, uploaded) if uploaded and store.application(user.id, application_id) else None
+        return show(request, user, application_id, message=just_added.filename if just_added else None)
 
     @app.post("/applications/{application_id}/documents")
     async def upload(request: Request, application_id: str, file: UploadFile, kind: str = Form(""), csrf: str = Form("")):
@@ -159,9 +162,9 @@ def create_app(store: Store, settings: Settings) -> FastAPI:
             content_type, ext = files.check(data, max_bytes)
         except files.Rejected as rejected:
             return show(request, user, application_id, error=rejected.reason, status=400)
-        name = files.clean_filename(file.filename)
-        store.add_document(found, kind, name, content_type, ext, data)
-        return show(request, user, application_id, message=name, status=201)
+        doc = store.add_document(found, kind, files.clean_filename(file.filename), content_type, ext, data)
+        # Redirect after a successful upload, so reloading the page can't upload the file twice.
+        return RedirectResponse(f"/applications/{found.id}?uploaded={doc.id}", status_code=303)
 
     @app.exception_handler(404)
     async def missing(request: Request, exc) -> Response:
