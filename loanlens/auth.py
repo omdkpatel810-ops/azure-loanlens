@@ -21,6 +21,12 @@ DEV_PEOPLE = {
     "dev-amelie": "Amélie Tremblay",
     "dev-jordan": "Jordan Okafor",
 }
+UNDERWRITER = "Underwriter"  # the app role, in the staff directory, that opens the dashboard
+DEV_STAFF_COOKIE = "loanlens_dev_staff"
+DEV_STAFF = {  # local only: one underwriter, and one colleague without the role
+    "dev-samira": ("Samira Haddad", frozenset({UNDERWRITER})),
+    "dev-kim": ("Kim Nguyen", frozenset()),
+}
 
 
 def _claims(principal: str | None) -> list[dict]:
@@ -45,3 +51,11 @@ def current_user(request: Request, mode: str) -> User | None:
         return User(user_id, name or request.headers.get("x-ms-client-principal-name") or "Applicant", roles)
     user_id = request.cookies.get(DEV_COOKIE, "")
     return User(user_id, DEV_PEOPLE[user_id]) if user_id in DEV_PEOPLE else None
+
+
+def current_staff(request: Request, mode: str) -> User | None:
+    """The signed-in staff member, from the staff directory's sign-in. Roles decide what they may do."""
+    if mode == "easyauth":
+        return current_user(request, mode)
+    found = DEV_STAFF.get(request.cookies.get(DEV_STAFF_COOKIE, ""))
+    return User(request.cookies[DEV_STAFF_COOKIE], found[0], found[1]) if found else None

@@ -1,0 +1,11 @@
+{% extends "staff/base.html" %}
+{% block main %}
+<h1>{{ s.sign_in }}</h1>
+<p class="muted">Local development only: pick a sample staff member. In Azure, the credit union's own directory signs staff in.</p>
+<form method="post" action="/dev/sign-in" class="form">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% for id, name in people.items() %}
+  <button type="submit" name="person" value="{{ id }}">{{ name }}</button>
+  {% endfor %}
+</form>
+{% endblock %}

@@ -1,4 +1,5 @@
-# Everything on your own computer: `docker compose up`, then open http://localhost:8000
+# Everything on your own computer: `docker compose up`, then open http://localhost:8000 (applicants)
+# and http://localhost:8001 (underwriters).
 # Azurite stands in for Azure Storage, and a local sign-in page stands in for Entra External ID.
 services:
   azurite:
@@ -6,6 +7,7 @@ services:
     command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0 --inMemoryPersistence --skipApiVersionCheck
     ports:
       - "8000:8000"   # the portal's port, published here because the portal shares this network
+      - "8001:8001"   # the dashboard's
       - "10000:10000"
       - "10001:10001"
       - "10002:10002"
@@ -24,5 +26,14 @@ services:
     network_mode: service:azurite
     environment:
       LOANLENS_AUTH: dev   # locally the worker uses the stand-in reader, which knows LoanLens' sample slips
+    depends_on:
+      - azurite
+
+  dashboard:
+    build: .
+    command: ["uvicorn", "--factory", "loanlens.dashboard:from_env", "--host", "0.0.0.0", "--port", "8001"]
+    network_mode: service:azurite
+    environment:
+      LOANLENS_AUTH: dev   # a local sign-in page with a sample underwriter; summaries use the template
     depends_on:
       - azurite

@@ -1,0 +1,28 @@
+{% extends "staff/base.html" %}
+{% block main %}
+<h1>{{ s.queue }}</h1>
+<p class="muted">{{ s.queue_lede }}</p>
+<p class="stat">{% if pct is not none %}{{ s.accuracy.format(pct=pct, kept=kept, total=total) }}{% else %}{{ s.no_accuracy }}{% endif %}</p>
+{% if rows %}
+<div class="table-scroll">
+<table class="queue">
+  <thead><tr><th>{{ s.applicant }}</th><th>{{ s.loan }}</th><th>{{ s.documents }}</th><th>{{ s.attention }}</th><th>{{ t.status }}</th><th>{{ s.opened }}</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.app.applicant_name }}</td>
+      <td>{{ t[r.app.loan_type] }} · {{ money(r.app.amount) }}</td>
+      <td class="n">{{ r.documents }}</td>
+      <td class="n">{% if r.attention %}<span class="badge">{{ r.attention }}</span>{% else %}0{% endif %}</td>
+      <td>{{ t[r.app.status] }}</td>
+      <td>{{ r.app.created_at[:10] }}</td>
+      <td><a href="/applications/{{ r.app.id }}">{{ s.open }}</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="muted">{{ s.empty_queue }}</p>
+{% endif %}
+{% endblock %}

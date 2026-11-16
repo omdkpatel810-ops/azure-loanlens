@@ -1,0 +1,71 @@
+{% extends "staff/base.html" %}
+{% block main %}
+<p><a href="/">← {{ s.back }}</a></p>
+<h1>{{ application.applicant_name }}</h1>
+<p class="muted">{{ t[application.loan_type] }} · {{ money(application.amount) }} · {{ t.status }}: {{ t[application.status] }}</p>
+{% if message %}<p class="ok" role="status">{{ s.saved }}</p>{% endif %}
+{% if error %}<p class="alert" role="alert">{{ error }}</p>{% endif %}
+
+<section class="summary">
+  <h2>{{ s.summary }}</h2>
+  <p>{{ summary.text }}</p>
+  <p class="muted small">{% if summary.source == "model" %}{{ s.from_model }}{% else %}{{ s.from_template }}{% endif %}</p>
+</section>
+
+{% for r in rows %}
+<section class="doc">
+  <h2>{{ r.doc.filename }} <span class="muted">· {{ t[r.doc.kind] }} · {{ t[r.doc.status] }}</span></h2>
+  <p><a href="/applications/{{ application.id }}/documents/{{ r.doc.id }}/file">{{ s.view_file }}</a></p>
+  {% if r.review %}<p class="muted small">{{ s.corrected_by.format(name=r.review.reviewer, at=r.review.at[:16].replace("T", " ")) }}{% if r.review.changes %} · {{ s.changes.format(n=r.review.changes|length) }}{% endif %}</p>{% endif %}
+  {% if r.reading and r.reading.issues %}
+    <div class="issues"><b>{{ s.issues }}</b><ul>{% for i in r.reading.issues %}<li>{{ i }}</li>{% endfor %}</ul></div>
+  {% elif r.reading and r.current %}
+    <p class="ok small">{{ s.no_issues }}</p>
+  {% endif %}
+  <form method="post" action="/applications/{{ application.id }}/documents/{{ r.doc.id }}/review" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if r.current %}
+    <div class="table-scroll">
+    <table class="fields">
+      <thead><tr><th>{{ s.field }}</th><th>{{ s.value }}</th><th>{{ s.confidence }}</th></tr></thead>
+      <tbody>
+      {% for key in fields %}
+        {% set read = r.reading.fields.get(key, {}) %}
+        <tr{% if read.confidence is defined and read.value and read.confidence < 0.8 %} class="unsure"{% endif %}>
+          <td><label for="f-{{ r.doc.id }}-{{ key }}">{{ field_name(key) }}</label></td>
+          <td><input id="f-{{ r.doc.id }}-{{ key }}" name="field__{{ key }}" value="{{ r.current.get(key) or '' }}" autocomplete="off"></td>
+          <td class="n">{% if read.value %}{{ (read.confidence * 100)|round|int }}%{% else %}–{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <button type="submit">{{ s.confirm }}</button>
+    {% else %}
+    <p class="muted small">{{ s.not_read }}</p>
+    <button type="submit">{{ s.confirm_other }}</button>
+    {% endif %}
+  </form>
+</section>
+{% endfor %}
+
+<section>
+  <h2>{{ s.decision }}</h2>
+  <form method="post" action="/applications/{{ application.id }}/decision" class="form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label class="choice"><input type="radio" name="decision" value="verified" required> {{ s.verify }}</label>
+    <label class="choice"><input type="radio" name="decision" value="more documents needed"> {{ s.more_docs }}</label>
+    <label>{{ s.note }}<textarea name="note" maxlength="{{ max_note }}" rows="3">{{ application.note }}</textarea></label>
+    <button type="submit">{{ s.save_decision }}</button>
+  </form>
+</section>
+
+{% if history %}
+<section>
+  <h2>{{ s.history }}</h2>
+  <ul class="history">
+  {% for e in history %}<li><span class="muted">{{ e.at[:16].replace("T", " ") }}</span> · <b>{{ e.actor }}</b> {{ e.action }}{% if e.detail %}: {{ e.detail }}{% endif %}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}
