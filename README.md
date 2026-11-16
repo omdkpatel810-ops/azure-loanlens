@@ -6,11 +6,11 @@ French.**
 
 [![CI](https://github.com/omdkpatel810-ops/azure-loanlens/actions/workflows/ci.yml/badge.svg)](https://github.com/omdkpatel810-ops/azure-loanlens/actions/workflows/ci.yml)
 
-> **Status: milestones 1 and 2 of 4 are built and tested offline.** The upload portal and the document
-> worker run locally against Azurite, the Azure Storage emulator, with 112 Python tests at 100% coverage,
-> and the Azure infrastructure has 16 Terraform tests against mocked providers. The model's accuracy can
-> only be measured once it's trained in Azure, which waits on the subscription; the measured results will
-> go here.
+> **Status: milestones 1 to 3 of 4 are built and tested offline.** The upload portal, the document worker
+> and the underwriter dashboard run locally against Azurite, the Azure Storage emulator, with 156 Python
+> tests at 100% coverage, and the Azure infrastructure has 22 Terraform tests against mocked providers.
+> The model's accuracy can only be measured once it's trained in Azure, which waits on the subscription;
+> the measured results will go here.
 
 ## The problem
 
@@ -165,12 +165,67 @@ most: **silent errors**, slips with a wrong value that the checks would *not* ha
 locally the worker uses a stand-in reader that knows the true values every LoanLens sample carries, so the
 whole flow works without Azure. It reads only LoanLens' samples; anything else goes to a person.
 
+## Milestone 3: the underwriter dashboard
+
+![An application in the dashboard: the summary, a T4 the worker flagged, and its values](docs/dashboard.png)
+
+```mermaid
+flowchart LR
+  U[Underwriter] -- signs in with the staff directory,<br/>Underwriter role required --> D[Dashboard<br/>Container Apps]
+  D -- documents, readings --> S[(Private storage)]
+  D -- reviews, decisions,<br/>audit trail --> S
+  D -- the figures only --> O[Azure OpenAI<br/>Canada East, no keys]
+```
+
+### Only underwriters
+
+Staff sign in with the credit union's own directory, which is separate from the applicants' tenant. The
+app requires an assignment, so **nobody without the Underwriter role can even sign in**, and the
+dashboard checks the role again on every request. Underwriters are listed by sign-in name in Terraform:
+assigning a group to an app needs a paid Entra ID plan, and individual assignments don't. The dashboard
+can also be limited to the credit union's office addresses.
+
+### What an underwriter sees
+
+- **Every application**, oldest first, with how many documents need a person.
+- **A short summary in English or French**, following the dashboard's language.
+- **Each T4's values**, with the model's confidence. Anything under 80% is highlighted. So are the
+  worker's issues: a figure over a legal maximum, or a slip that isn't the applicant's (the employee's
+  name has to match, ignoring accents, case and initials).
+- **The document itself.** Photos open in the browser, sandboxed; PDFs download and open in the
+  underwriter's PDF reader. Nothing an applicant uploaded ever runs as part of the dashboard, and every
+  view is written to the audit trail.
+
+### Summaries that can't make things up
+
+The summary is written from the figures only (applicant, loan, each T4's year, employer, income and tax,
+and the amount-to-income figure), never from the documents. Azure OpenAI writes it, in Canada East with a
+regional deployment, so the figures are processed in Canada. Then **every number in its summary is
+checked against the figures**. One that isn't there, and the summary is thrown away for LoanLens' plain
+template, which says the same things in fixed words. The page always says which one you're reading.
+Summaries are kept until the figures change, so the model isn't asked twice for the same application.
+
+![The same application in French](docs/dashboard-fr.png)
+
+The dashboard itself is in both languages; the worker's issue notes are still English only.
+
+### Human review, recorded
+
+An underwriter confirms each T4's values, correcting any the model got wrong, and checks every other
+document. Only when every document is checked can the application be marked **documents verified**.
+Otherwise they **ask for more documents**, with a note the applicant sees on the portal. Every
+correction, view and decision is kept with who made it.
+
+The corrections also measure the model on real documents. The dashboard shows the share of values
+underwriters kept as the model read them, a running accuracy figure from real applications, next to the
+one from the test slips.
+
 ## Running it
 
 **On your computer**, with Docker:
 
 ```bash
-docker compose up        # then open http://localhost:8000 and pick a sample applicant
+docker compose up        # applicants: http://localhost:8000, underwriters: http://localhost:8001
 ```
 
 Azurite stands in for Azure Storage and a local sign-in page stands in for External ID. Without Docker:
@@ -178,7 +233,9 @@ Azurite stands in for Azure Storage and a local sign-in page stands in for Exter
 ```bash
 pip install -r requirements.txt
 npx azurite --inMemoryPersistence --skipApiVersionCheck &
-LOANLENS_AUTH=dev uvicorn --factory loanlens.portal:from_env
+LOANLENS_AUTH=dev uvicorn --factory loanlens.portal:from_env &
+LOANLENS_AUTH=dev uvicorn --factory loanlens.dashboard:from_env --port 8001 &
+LOANLENS_AUTH=dev python -m loanlens.worker
 ```
 
 **In Azure**, once Guardrails has vended the resource group (the request is below):
@@ -205,6 +262,9 @@ LOANLENS_AUTH=dev uvicorn --factory loanlens.portal:from_env
    python -m loanlens.evaluate data/t4/test --endpoint ... --model loanlens-t4-v1 --save results/accuracy.json
    ```
 
+5. Give underwriters the role: `-var 'underwriters=["you@yourtenant.onmicrosoft.com"]'`. Check that
+   `gpt-4o-mini` is offered as a Standard deployment in Canada East first; `openai_model` changes it.
+
 LoanLens' environment request for Guardrails (`environments/loanlens-prod.json` there):
 
 ```json
@@ -219,7 +279,9 @@ about $5 a month; storage and Event Grid cost cents at this volume. External ID 
 50,000 applicants a month. Document Intelligence's
 [free tier](https://azure.microsoft.com/pricing/details/ai-document-intelligence/) reads 500 pages a
 month; after that it's charged per 1,000 pages. Training a neural model is free for the first 10 hours
-and $3 an hour after that; training on 40 slips takes well under that.
+and $3 an hour after that; training on 40 slips takes well under that. Summaries use `gpt-4o-mini`, a
+fraction of a cent each, and each application's summary is written once per language until its figures
+change.
 
 ## Tests
 
@@ -227,31 +289,34 @@ and $3 an hour after that; training on 40 slips takes well under that.
 |---|---|---|
 | The portal: sign-in, applications, uploads, refusals, limits, who sees what, forged forms, French, security headers | pytest, with an in-memory store | 28 |
 | File checks, upload events, settings, sign-in roles | pytest | 18 |
-| T4 checks: amounts as printed, each year's maximums, Quebec rules, missing fields | pytest | 26 |
+| T4 checks: amounts as printed, each year's maximums, Quebec rules, missing fields, matching names | pytest | 34 |
 | The sample generator: marked as samples, figures that follow the rules, labels that point at the printed words | pytest, reading the PDFs back | 9 |
-| The worker: clean reads, misreads, unsure model, retries then poison, duplicates, stray events, errors | pytest, with stand-in extractors | 11 |
+| The worker: clean reads, misreads, unsure model, someone else's slip, retries then poison, duplicates, stray events, errors | pytest, with stand-in extractors | 12 |
 | Document Intelligence calls, which failures are retried, the accuracy measurement (silent errors), training | pytest, with a stand-in client | 11 |
-| The Azure Storage code end to end: tables, private blobs, events, the worker taking real queue messages | pytest, against Azurite | 9 |
+| The dashboard: only underwriters, corrections, decisions, the applicant's note, viewing documents, French, summaries kept until the figures change | pytest | 18 |
+| Summaries: the facts, the template in both languages, the numbers check, outages | pytest, with a stand-in model | 16 |
+| The Azure Storage code end to end: tables, private blobs, events, the worker taking real queue messages, reviews and the audit trail | pytest, against Azurite | 10 |
 | Python coverage | pytest-cov | 100% |
 | Storage lock-down, retention, upload events, least privilege, scale to zero, sign-in, secret rotation, bad inputs | `terraform test`, mocked providers | 11 |
 | Document Intelligence's lock-down, the worker's rights, scaling on the queue, no ingress | `terraform test`, mocked providers | 5 |
+| Underwriter sign-in and role, the dashboard's rights, Azure OpenAI in Canada without keys, office-only access | `terraform test`, mocked providers | 6 |
 | Formatting, validation, linting, security scanning; the image builds and answers its health check | `terraform fmt` and `validate`, tflint, Checkov, ruff, Docker | every push |
 
-Checkov passes 27 checks on the Terraform and skips 23, each with its reason written next to it (most are
+Checkov passes 29 checks on the Terraform and skips 29, each with its reason written next to it (most are
 Premium-only registry features). It passes every check on the workflow and the Dockerfile.
 
 ## Roadmap
 
 1. **Secure upload portal**: applicant sign-in, private storage, upload events into a queue ✅ built and tested offline
 2. **Worker reads documents**: a custom extraction model trained on generated T4s ✅ built and tested offline
-3. **Underwriter dashboard** with bilingual summaries and human review
+3. **Underwriter dashboard** with bilingual summaries and human review ✅ built and tested offline
 4. **Load test, monitoring, cost per application**, and the Canada East failover drill
 
 ## Layout
 
 ```
-loanlens/       the portal (FastAPI) and the worker; t4.py (fields and checks), samples.py, train.py, evaluate.py
-infra/          Terraform: network, private storage and Event Grid, Container Apps, External ID sign-in, Document Intelligence
+loanlens/       portal.py, worker.py, dashboard.py; t4.py (fields and checks), samples.py, train.py, evaluate.py, summary.py
+infra/          Terraform: network, storage and Event Grid, Container Apps, sign-in, Document Intelligence, Azure OpenAI
 docs/samples/   three generated sample T4s to try the portal with
 tests/          Python tests (and infra/tests/ for Terraform)
 docs/           screenshots
