@@ -121,7 +121,7 @@ def create_dashboard(store: Store, settings: Settings, summarizer: summary.Summa
         cached = store.cached_summary(found.id, lang, fp)
         if cached is None:
             written = summarizer.summarize(f, lang)
-            cached = {"text": written.text, "source": written.source, "note": written.note}
+            cached = {"text": written.text, "source": written.source, "note": written.note, "tokens": written.tokens}
             store.save_summary(found.id, lang, fp, cached)
         return {"application": found, "rows": rows, "summary": cached, "history": store.audit(found.id)}
 
@@ -275,8 +275,10 @@ def create_dashboard(store: Store, settings: Settings, summarizer: summary.Summa
 def from_env() -> FastAPI:  # pragma: no cover - wiring for the real server
     import os
 
+    from loanlens import telemetry
     from loanlens.store import AzureStore
 
+    telemetry.setup("dashboard")
     settings = Settings.from_env()
     store = AzureStore(account=settings.storage_account, connection=settings.storage_connection)
     if settings.storage_connection:

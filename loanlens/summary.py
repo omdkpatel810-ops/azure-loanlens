@@ -29,6 +29,7 @@ class Summary:
     text: str
     source: str  # "model": written by Azure OpenAI, numbers checked; "template": LoanLens' own wording
     note: str = ""
+    tokens: int = 0  # what the model used, for the cost per application
 
 
 def money(value: Decimal | int, lang: str) -> str:
@@ -187,11 +188,15 @@ class OpenAISummarizer:
                 ],
             )
             text = (reply.choices[0].message.content or "").strip()
+            tokens = int(getattr(getattr(reply, "usage", None), "total_tokens", 0) or 0)
         except Exception as e:  # any failure: the template still tells the underwriter what they need
             return Summary(fallback, "template", f"Azure OpenAI wasn't available ({type(e).__name__})")
         bad = unsupported_numbers(text, f, lang)
         if not text or bad:
             return Summary(
-                fallback, "template", f"The model's summary had numbers that aren't in the facts ({', '.join(map(str, bad))})"
+                fallback,
+                "template",
+                f"The model's summary had numbers that aren't in the facts ({', '.join(map(str, bad))})",
+                tokens,
             )
-        return Summary(text, "model")
+        return Summary(text, "model", tokens=tokens)

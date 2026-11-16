@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import re
 
 from fastapi import Request
 
@@ -21,6 +22,7 @@ DEV_PEOPLE = {
     "dev-amelie": "Amélie Tremblay",
     "dev-jordan": "Jordan Okafor",
 }
+LOAD_TEST_PERSON = re.compile(r"dev-load-(\d{1,5})")  # local only: as many sample applicants as a load test needs
 UNDERWRITER = "Underwriter"  # the app role, in the staff directory, that opens the dashboard
 DEV_STAFF_COOKIE = "loanlens_dev_staff"
 DEV_STAFF = {  # local only: one underwriter, and one colleague without the role
@@ -50,7 +52,10 @@ def current_user(request: Request, mode: str) -> User | None:
         roles = frozenset(c.get("val", "") for c in claims if c.get("typ") in ("roles", "role"))
         return User(user_id, name or request.headers.get("x-ms-client-principal-name") or "Applicant", roles)
     user_id = request.cookies.get(DEV_COOKIE, "")
-    return User(user_id, DEV_PEOPLE[user_id]) if user_id in DEV_PEOPLE else None
+    if user_id in DEV_PEOPLE:
+        return User(user_id, DEV_PEOPLE[user_id])
+    load = LOAD_TEST_PERSON.fullmatch(user_id)
+    return User(user_id, f"Load Test {load.group(1)}") if load else None
 
 
 def current_staff(request: Request, mode: str) -> User | None:

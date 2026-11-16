@@ -8,3 +8,4 @@ azure-storage-queue==12.18.1
 azure-data-tables==12.7.0
 azure-ai-documentintelligence==1.0.2
 openai==3.51.0
+azure-monitor-opentelemetry==1.8.12

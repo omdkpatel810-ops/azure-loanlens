@@ -43,7 +43,7 @@ class Worker:
         try:
             container, blob = events.parse(message.content)
         except ValueError as e:
-            self.queue.poison(message, f"not an upload event: {e}")
+            self._set_aside(message, f"not an upload event: {e}")
             return "poisoned"
         if container != events.CONTAINER or "/" not in blob:
             self.queue.delete(message)
@@ -51,7 +51,7 @@ class Worker:
         application_id, filename = blob.split("/", 1)
         doc = self.store.document(application_id, filename.rsplit(".", 1)[0])
         if doc is None:
-            self.queue.poison(message, f"no record for {blob}; it wasn't uploaded through the portal")
+            self._set_aside(message, f"no record for {blob}; it wasn't uploaded through the portal")
             return "poisoned"
         if doc.status in DONE:  # Event Grid delivers at least once, so the same event can come twice
             self.queue.delete(message)
@@ -76,7 +76,7 @@ class Worker:
                 return "retry later"
             self.store.save_reading(doc, {"kind": "t4", "issues": [f"Couldn't be read: {e}"], "error": str(e)})
             self.store.set_status(doc, "failed")
-            self.queue.poison(message, str(e))
+            self._set_aside(message, str(e))
             return "failed"
 
         values = {k: t4.normalize(k, f.value) for k, f in extraction.fields.items()}
@@ -104,12 +104,16 @@ class Worker:
                 "issues": issues,
                 "pages": extraction.pages,
                 "seconds": round(self.clock() - started, 2),
-                "read_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "read_at": datetime.now(UTC).isoformat(timespec="milliseconds"),
             },
         )
         self.store.set_status(doc, status)
         self.queue.delete(message)
         return status
+
+    def _set_aside(self, message: Message, reason: str) -> None:
+        log.warning("set aside a message: %s", reason)  # Azure Monitor alerts on these
+        self.queue.poison(message, reason)
 
     def run_once(self, batch: int = 16) -> list[str]:
         outcomes = []
@@ -155,4 +159,7 @@ def from_env(env: dict[str, str] | None = None) -> Worker:  # pragma: no cover -
 if __name__ == "__main__":  # pragma: no cover
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
     logging.getLogger("azure").setLevel(logging.WARNING)  # the SDK logs every request at INFO
+    from loanlens import telemetry
+
+    telemetry.setup("worker")
     from_env().run()

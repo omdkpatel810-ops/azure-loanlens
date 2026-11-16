@@ -53,6 +53,7 @@ class Store(Protocol):
     def audit(self, application_id: str) -> list[dict]: ...
     def cached_summary(self, application_id: str, lang: str, fingerprint: str) -> dict | None: ...
     def save_summary(self, application_id: str, lang: str, fingerprint: str, summary: dict) -> None: ...
+    def summary_record(self, application_id: str, lang: str) -> dict | None: ...
 
 
 def new_application(applicant: User, loan_type: str, amount: int) -> Application:
@@ -144,6 +145,9 @@ class MemoryStore:
 
     def save_summary(self, application_id: str, lang: str, fingerprint: str, summary: dict) -> None:
         self.summaries[(application_id, lang)] = {**summary, "fingerprint": fingerprint}
+
+    def summary_record(self, application_id: str, lang: str) -> dict | None:
+        return self.summaries.get((application_id, lang))
 
 
 class AzureStore:
@@ -344,3 +348,12 @@ class AzureStore:
     def save_summary(self, application_id: str, lang: str, fingerprint: str, summary: dict) -> None:
         row = {"PartitionKey": application_id, "RowKey": lang, "fingerprint": fingerprint, "summary": json.dumps(summary)}
         self.summary_table.upsert_entity(row)
+
+    def summary_record(self, application_id: str, lang: str) -> dict | None:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            row = self.summary_table.get_entity(application_id, lang)
+        except ResourceNotFoundError:
+            return None
+        return json.loads(row["summary"]) | {"fingerprint": row["fingerprint"]}

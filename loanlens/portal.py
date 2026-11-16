@@ -178,7 +178,7 @@ def create_app(store: Store, settings: Settings) -> FastAPI:
 
         @app.post("/dev/sign-in")
         def dev_choose(request: Request, person: str = Form(""), csrf: str = Form("")):
-            if person not in auth.DEV_PEOPLE or not form_ok(request, csrf):
+            if (person not in auth.DEV_PEOPLE and not auth.LOAD_TEST_PERSON.fullmatch(person)) or not form_ok(request, csrf):
                 return RedirectResponse("/dev/sign-in", status_code=303)
             response = RedirectResponse("/", status_code=303)
             response.set_cookie(auth.DEV_COOKIE, person, httponly=True, samesite="lax")
@@ -194,6 +194,9 @@ def create_app(store: Store, settings: Settings) -> FastAPI:
 
 
 def from_env() -> FastAPI:  # pragma: no cover - wiring for the real server
+    from loanlens import telemetry
+
+    telemetry.setup("portal")
     settings = Settings.from_env()
     store = AzureStore(
         account=settings.storage_account, connection=settings.storage_connection, emulate_events=settings.emulate_events
