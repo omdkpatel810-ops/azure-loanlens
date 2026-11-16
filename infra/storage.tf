@@ -30,6 +30,12 @@ resource "azurerm_storage_account" "documents" {
     bypass                     = ["AzureServices"] # Event Grid, delivering with its managed identity
     virtual_network_subnet_ids = [azurerm_subnet.apps.id]
     ip_rules                   = [for r in var.operator_ip_ranges : trimsuffix(r, "/32")]
+
+    # Document Intelligence, reading the training folder with its own identity (milestone 2).
+    private_link_access {
+      endpoint_resource_id = azurerm_cognitive_account.documents.id
+      endpoint_tenant_id   = data.azurerm_client_config.current.tenant_id
+    }
   }
 
   blob_properties {
@@ -83,7 +89,7 @@ resource "azurerm_storage_queue" "uploads" {
 
 resource "azurerm_storage_table" "records" {
   #checkov:skip=CKV2_AZURE_20:Table reads are logged through Azure Monitor diagnostic settings (milestone 4), not the classic logs.
-  for_each = toset(["applications", "documents"])
+  for_each = toset(["applications", "documents", "readings"])
 
   name               = each.key
   storage_account_id = azurerm_storage_account.documents.id

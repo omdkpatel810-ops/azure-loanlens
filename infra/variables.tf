@@ -66,3 +66,38 @@ variable "document_retention_days" {
     error_message = "Between 1 and 10 years."
   }
 }
+
+# Milestone 2: the worker (worker.tf)
+
+variable "document_intelligence_sku" {
+  description = "F0 is the free tier, with monthly limits; S0 is pay as you go."
+  type        = string
+  default     = "S0"
+
+  validation {
+    condition     = contains(["F0", "S0"], var.document_intelligence_sku)
+    error_message = "F0 or S0."
+  }
+}
+
+variable "document_model_id" {
+  description = "The custom T4 model the worker uses, as trained by `python -m loanlens.train`."
+  type        = string
+  default     = "loanlens-t4-v1"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9][a-zA-Z0-9._~-]{1,63}$", var.document_model_id))
+    error_message = "A Document Intelligence model ID: letters, digits and . _ ~ -, up to 64 characters."
+  }
+}
+
+variable "confidence_threshold" {
+  description = "Below this confidence, a value the model read sends the document to a person."
+  type        = number
+  default     = 0.8
+
+  validation {
+    condition     = var.confidence_threshold >= 0.5 && var.confidence_threshold < 1
+    error_message = "Between 0.5 and 1."
+  }
+}

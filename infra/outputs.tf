@@ -12,3 +12,8 @@ output "storage_account" {
   description = "The private document storage."
   value       = azurerm_storage_account.documents.name
 }
+
+output "document_intelligence" {
+  description = "The endpoint `python -m loanlens.train` and the worker use."
+  value       = azurerm_cognitive_account.documents.endpoint
+}

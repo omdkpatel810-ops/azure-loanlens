@@ -74,3 +74,10 @@ mock_resource "azurerm_container_app_environment" {
 mock_resource "azurerm_container_app" {
   defaults = { id = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-loanlens-prod/providers/Microsoft.App/containerApps/ca-loanlens-portal" }
 }
+
+mock_resource "azurerm_cognitive_account" {
+  defaults = {
+    id       = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-loanlens-prod/providers/Microsoft.CognitiveServices/accounts/di-loanlens"
+    endpoint = "https://di-loanlens.cognitiveservices.azure.com/"
+  }
+}

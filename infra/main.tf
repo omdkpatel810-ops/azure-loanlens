@@ -37,7 +37,7 @@ resource "azurerm_subnet" "apps" {
   resource_group_name  = local.rg
   virtual_network_name = azurerm_virtual_network.loanlens.name
   address_prefixes     = [cidrsubnet(var.address_space, 27 - tonumber(split("/", var.address_space)[1]), 0)]
-  service_endpoints    = ["Microsoft.Storage"]
+  service_endpoints    = ["Microsoft.Storage", "Microsoft.CognitiveServices"]
 
   delegation {
     name = "container-apps"
