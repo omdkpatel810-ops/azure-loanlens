@@ -6,3 +6,4 @@ azure-identity==1.27.0
 azure-storage-blob==12.31.1
 azure-storage-queue==12.18.1
 azure-data-tables==12.7.0
+azure-ai-documentintelligence==1.0.2

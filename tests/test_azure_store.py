@@ -71,7 +71,7 @@ def test_nothing_is_public(azure):
 def test_the_portal_end_to_end(azure, settings):
     portal = Portal(azure, settings, as_person(f"user-{uuid.uuid4().hex[:6]}"))
     app_id = portal.start(amount="120000").headers["location"].rsplit("/", 1)[-1]
-    assert portal.upload(app_id).status_code == 201
+    assert portal.upload(app_id).status_code == 303
     (doc,) = azure.documents(app_id)
     assert doc.status == "uploaded" and len(azure.queue.peek_messages()) == 1
 
@@ -106,3 +106,35 @@ def test_in_azure_event_grid_queues_the_event_not_the_app(azure):
     app = store.create_application(User("u2", "U"), "car", 5_000)
     store.add_document(app, "pay_stub", "stub.png", "image/png", ".png", b"\x89PNG\r\n\x1a\n")
     assert azure.queue.peek_messages() == []
+
+
+def test_upload_to_reading_end_to_end(azure, settings):
+    """The portal stores a sample slip; the worker takes the event off Azurite's queue and records what it read."""
+    import random
+
+    from loanlens import samples
+    from loanlens.extract import SampleReader
+    from loanlens.queues import AzureQueue
+    from loanlens.worker import Worker
+
+    azure.queues.get_queue_client(events.POISON_QUEUE).clear_messages()
+    rng = random.Random(5)
+    fields = samples.invent(rng)
+    slip = samples.with_truth(samples.draw(fields, rng)[0], fields)
+    portal = Portal(azure, settings, as_person(f"user-{uuid.uuid4().hex[:6]}"))
+    app_id = portal.start(amount="90000").headers["location"].rsplit("/", 1)[-1]
+    assert portal.upload(app_id, slip).status_code == 303
+    junk = User("j", "J")
+    stray = azure.create_application(junk, "car", 5_000)
+    azure.queue.send_message(json.dumps(events.blob_created("x", f"{stray.id}/doc-missing.pdf", "application/pdf", 1)))
+
+    worker = Worker(azure, AzureQueue(azure.queues), SampleReader())
+    assert sorted(worker.run_once()) == ["poisoned", "read"]
+    (doc,) = azure.documents(app_id)
+    assert doc.status == "read"
+    reading = azure.reading(app_id, doc.id)
+    assert reading["fields"]["box14"]["value"] == fields["box14"] and reading["issues"] == []
+    assert azure.queue.peek_messages() == []
+    (poisoned,) = azure.queues.get_queue_client(events.POISON_QUEUE).receive_messages()
+    assert "wasn't uploaded through the portal" in json.loads(poisoned.content)["reason"]
+    assert azure.reading(app_id, "doc-nope") is None and azure.document(app_id, "doc-nope") is None

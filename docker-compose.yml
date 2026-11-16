@@ -17,3 +17,12 @@ services:
       LOANLENS_AUTH: dev
     depends_on:
       - azurite
+
+  worker:
+    build: .
+    command: ["python", "-m", "loanlens.worker"]
+    network_mode: service:azurite
+    environment:
+      LOANLENS_AUTH: dev   # locally the worker uses the stand-in reader, which knows LoanLens' sample slips
+    depends_on:
+      - azurite
