@@ -22,7 +22,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
-allowed-confusables = ["’", "\u00a0"]  # French typography: apostrophes, and no-break spaces in amounts
+allowed-confusables = ["’", "\u00a0", "\u202f"]  # French typography: apostrophes, and no-break spaces in amounts
 
 [tool.ruff.lint.isort]
 known-first-party = ["loanlens"]
