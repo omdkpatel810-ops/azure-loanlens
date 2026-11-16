@@ -87,6 +87,11 @@ resource "azurerm_container_app" "portal" {
   }
 
   secret {
+    name  = "appinsights-connection" # not a key: sending still needs the app's Entra ID token
+    value = azurerm_application_insights.loanlens.connection_string
+  }
+
+  secret {
     name  = "microsoft-provider-authentication-secret"
     value = azuread_application_password.portal.value
   }
@@ -124,6 +129,10 @@ resource "azurerm_container_app" "portal" {
       env {
         name  = "LOANLENS_STORAGE_ACCOUNT"
         value = azurerm_storage_account.documents.name
+      }
+      env {
+        name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        secret_name = "appinsights-connection"
       }
       env {
         name  = "AZURE_CLIENT_ID" # which identity DefaultAzureCredential uses

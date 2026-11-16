@@ -102,6 +102,11 @@ resource "azurerm_container_app" "worker" {
     identity = azurerm_user_assigned_identity.worker.id
   }
 
+  secret {
+    name  = "appinsights-connection" # not a key: sending still needs the app's Entra ID token
+    value = azurerm_application_insights.loanlens.connection_string
+  }
+
   # No ingress: nothing can call the worker. It only takes work from the queue.
 
   template {
@@ -141,6 +146,10 @@ resource "azurerm_container_app" "worker" {
       env {
         name  = "LOANLENS_CONFIDENCE"
         value = tostring(var.confidence_threshold)
+      }
+      env {
+        name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        secret_name = "appinsights-connection"
       }
       env {
         name  = "AZURE_CLIENT_ID"

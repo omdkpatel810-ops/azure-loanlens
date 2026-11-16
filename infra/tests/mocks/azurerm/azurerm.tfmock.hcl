@@ -81,3 +81,14 @@ mock_resource "azurerm_cognitive_account" {
     endpoint = "https://di-loanlens.cognitiveservices.azure.com/"
   }
 }
+
+mock_resource "azurerm_application_insights" {
+  defaults = {
+    id                = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-loanlens-prod/providers/Microsoft.Insights/components/appi-loanlens"
+    connection_string = "InstrumentationKey=00000000-0000-0000-0000-000000000000;IngestionEndpoint=https://canadacentral-1.in.applicationinsights.azure.com/"
+  }
+}
+
+mock_resource "azurerm_monitor_action_group" {
+  defaults = { id = "/subscriptions/00000000-0000-0000-0000-00000000bbbb/resourceGroups/rg-loanlens-prod/providers/Microsoft.Insights/actionGroups/ag-loanlens-operators" }
+}

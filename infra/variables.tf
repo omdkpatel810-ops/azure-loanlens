@@ -159,3 +159,16 @@ variable "openai_capacity" {
     error_message = "Between 1 and 100."
   }
 }
+
+# Milestone 4: monitoring (monitoring.tf)
+
+variable "alert_email" {
+  description = "Where alerts are emailed. Empty: alerts still fire and show in the portal, but nobody is emailed."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.alert_email == "" || can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.alert_email))
+    error_message = "An email address, or empty."
+  }
+}
